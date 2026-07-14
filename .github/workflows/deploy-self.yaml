@@ -1,0 +1,54 @@
+name: Static Website CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  IMAGE: mohanmy5/static-website
+  TAG: ${{ github.run_number }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ${IMAGE}:${TAG} .
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push Docker image
+        run: docker push ${IMAGE}:${TAG}
+
+      - name: Log out of Docker Hub
+        if: always()
+        run: docker logout
+
+  deploy:
+    needs: build-and-push
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest image
+        run: docker pull ${IMAGE}:${TAG}
+
+      - name: Remove existing container
+        run: docker rm -f static-site || true
+
+      - name: Run new container
+        run: docker run -d --name static-site -p 8083:80 ${IMAGE}:${TAG}
+
+      - name: Deployment success message
+        if: success()
+        run: echo "Deployed build ${TAG} → http://localhost:8083"
+
+      - name: Deployment failure message
+        if: failure()
+        run: echo "Deployment failed. Check the job logs above."
